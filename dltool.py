@@ -9,14 +9,14 @@ import random
 
 
 # 1. EEG Verisini Yükle
-eeg_path = r"C:\Users\yagiz\OneDrive\Masaüstü\Uygulamalar\kodlar\SleepEdf\SC4001E0-PSG.edf"
+eeg_path = "SleepEdf\SC4001E0-PSG.edf"
 raw_eeg = mne.io.read_raw_edf(eeg_path, preload=True)
 raw_eeg.pick(['EEG Fpz-Cz', 'EEG Pz-Oz'])  # İlgili kanalları seç
 data = raw_eeg.get_data()
 sfreq = raw_eeg.info['sfreq']
 
 # 2. Hypnogramı Yükle ve İşle
-hypnogram_path = r"C:\Users\yagiz\OneDrive\Masaüstü\Uygulamalar\kodlar\SleepEdf\SC4002EC-Hypnogram.edf"
+hypnogram_path = "SleepEdf\SC4002EC-Hypnogram.edf"
 raw_hyp = mne.io.read_raw_edf(hypnogram_path, preload=False)
 events, event_id = mne.events_from_annotations(raw_hyp)
 print(events)
