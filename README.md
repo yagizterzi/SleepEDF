@@ -1,6 +1,4 @@
-Here’s a README file format for your GitHub project:
 
-```markdown
 # EEG Sleep Stage Prediction using Deep Learning
 
 This project aims to predict a person's sleep stages using EEG (Electroencephalography) data, leveraging machine learning and deep learning techniques. The sleep stages represent different brainwave activities during sleep, and this project processes EEG signals to classify these stages.
