@@ -1,76 +1,126 @@
-# SleepEDF
-This project aims to predict a person's sleep stages using EEG (Electroencephalography) data, leveraging machine learning and deep learning techniques. Sleep stages represent different brainwave activities that occur as a person sleeps, and this project processes EEG signals to identify these stages.
+Here’s a README file format for your GitHub project:
 
-Here's a step-by-step explanation:
+```markdown
+# EEG Sleep Stage Prediction using Deep Learning
 
-#1. Loading the EEG Data:
+This project aims to predict a person's sleep stages using EEG (Electroencephalography) data, leveraging machine learning and deep learning techniques. The sleep stages represent different brainwave activities during sleep, and this project processes EEG signals to classify these stages.
 
-EEG devices measure the electrical activity of the brain, and this data is often stored in .edf (European Data Format) files. The project loads the EEG data from one of these files and selects specific channels (EEG signals). In this example, 'EEG Fpz-Cz' and 'EEG Pz-Oz' channels are chosen.
+## Table of Contents
+- [Project Overview](#project-overview)
+- [Getting Started](#getting-started)
+- [Data Description](#data-description)
+- [Model Architecture](#model-architecture)
+- [Training the Model](#training-the-model)
+- [Evaluating the Model](#evaluating-the-model)
+- [Incorrect Predictions Analysis](#incorrect-predictions-analysis)
+- [Testing with New Data](#testing-with-new-data)
+- [Conclusion](#conclusion)
 
-#2. Loading and Processing the Hypnogram (Sleep Stages):
+## Project Overview
 
-Sleep stages are labels indicating the depth of sleep (such as deep sleep, light sleep, etc.) at specific time intervals (e.g., every 30 seconds). The project loads another .edf file containing these stages and converts the annotations into numerical labels.
+The goal of this project is to classify sleep stages from EEG data using a Convolutional Neural Network (CNN). The model is trained on labeled EEG data and learns to predict the sleep stages based on the brainwave patterns it detects. The project includes data preprocessing, model training, evaluation, and analysis of predictions.
 
-Sleep stages are categorized into 'W' (wakefulness), '1' (light sleep), '2' (deep sleep), 'R' (REM sleep), and so on.
+## Getting Started
 
-#3. Processing EEG Data:
+To run this project, you will need Python 3.x and the following libraries:
 
-EEG data is typically very long, so it's divided into shorter time intervals called epochs (e.g., 30 seconds). These epochs are mapped to sleep stages, and each epoch corresponds to one sleep stage.
+- `numpy`
+- `mne`
+- `tensorflow`
+- `scikit-learn`
+- `matplotlib`
+  
+You can install the required libraries using `pip`:
 
-The EEG data is reshaped into a 3D array, where each epoch is represented by a sequence of data from the selected channels.
+```bash
+pip install numpy mne tensorflow scikit-learn matplotlib
+```
 
-#4. Scaling the Data:
+Once you have the dependencies installed, you can start by loading the EEG and hypnogram data files into the project.
 
-EEG data can vary in range, so it's scaled using a standard scaler to ensure that the data is normalized. This step helps the model perform better and learn more effectively.
+## Data Description
 
-#5. Splitting the Data into Training and Test Sets:
+This project uses EEG data in `.edf` (European Data Format) files, which are commonly used for storing brainwave measurements. The data contains signals from specific EEG channels and labels indicating the sleep stage.
 
-The data is split into training and test sets. The training set is used to teach the model, while the test set is used to evaluate its performance.
+- **EEG data**: It contains the brain activity for specific channels recorded during sleep.
+- **Hypnogram data**: This provides annotations for the sleep stages at different time intervals.
 
-#6. Building the Model:
+Sleep stages are labeled as follows:
+- **W (Wake)**: Wakefulness
+- **1**: Light Sleep
+- **2**: Deep Sleep
+- **3/4**: Very Deep Sleep
+- **R (REM)**: Rapid Eye Movement sleep (associated with dreaming)
 
-The deep learning model is built using a structure called a "Convolutional Neural Network" (CNN), which is effective for recognizing patterns in time-series data, such as EEG signals.
+## Model Architecture
 
-Model layers:
+The model is built using a **Convolutional Neural Network (CNN)**, which is effective for time-series data like EEG signals. The architecture includes the following layers:
 
-Conv1D: Identifies patterns in the EEG signal that correspond to different sleep stages.
+1. **Conv1D**: Detects patterns in the EEG signals corresponding to different sleep stages.
+2. **MaxPooling1D**: Reduces dimensionality to speed up training.
+3. **Flatten**: Converts the 2D output of the convolution layers into a 1D vector.
+4. **Dense**: Fully connected layer that learns high-level features.
+5. **Dropout**: Prevents overfitting by randomly setting a fraction of input units to 0 at each update.
+6. **Softmax**: Outputs a probability distribution for the sleep stages.
 
-MaxPooling1D: Reduces the data's dimensionality, helping the model learn faster.
+The model is compiled with the Adam optimizer and sparse categorical cross-entropy loss.
 
-Dense and Dropout: Helps to prevent overfitting (learning too much detail from the training data).
+## Training the Model
 
-Softmax: The final layer that provides predictions for each sleep stage.
+After preprocessing the EEG data, the model is trained using the training set. The training process involves adjusting the model's weights to minimize the error in predicting sleep stages.
 
-#7. Compiling and Training the Model:
+```python
+history = model.fit(X_train, y_train, epochs=10, validation_data=(X_test, y_test))
+```
 
-The model is trained using the data, where it adjusts its parameters (weights) to minimize the loss (error) and maximize accuracy. The performance is measured using metrics like accuracy and loss.
+## Evaluating the Model
 
-#8. Evaluating the Model:
+Once trained, the model is evaluated on a separate test set to determine its accuracy and loss:
 
-After training, the model is evaluated using the test set to see how well it performs on unseen data. The test accuracy and loss values are printed.
+```python
+test_loss, test_acc = model.evaluate(X_test, y_test)
+print(f"Test Accuracy: {test_acc:.2f}")
+```
 
-#9. Analyzing Incorrect Predictions:
+This provides an indication of how well the model generalizes to new, unseen data.
 
-The model's incorrect predictions are analyzed to identify which samples it misclassified. This helps in understanding where the model made mistakes.
+## Incorrect Predictions Analysis
 
-#10. Testing with a New EEG Signal:
+The model's performance is further analyzed by examining its incorrect predictions. This helps in understanding where the model made mistakes and identifying any potential improvements.
 
-The model is also tested with a new EEG signal that it has not seen before. This allows us to evaluate how well the model generalizes to new data.
+```python
+incorrect_predictions = []
+for i in range(len(X_test)):
+    sample_input = np.expand_dims(X_test[i], axis=0)
+    predicted_label = np.argmax(model.predict(sample_input))
+    if predicted_label != y_test[i]:
+        incorrect_predictions.append((i, y_test[i], predicted_label))
+```
 
-Conclusion:
+## Testing with New Data
 
-This project aims to classify sleep stages based on EEG data using deep learning techniques. EEG signals reflect brain electrical activity, and sleep stages correspond to different brainwave patterns. Deep learning models are used to recognize these patterns and predict which sleep stage the person is in.
+To test the model with new EEG data that it hasn't seen before, you can use the following function:
 
-Sleep Stages:
+```python
+def test_new_eeg(new_eeg_path):
+    raw_new = mne.io.read_raw_edf(new_eeg_path, preload=True)
+    raw_new.pick_channels(['EEG Fpz-Cz', 'EEG Pz-Oz'])
+    new_data = raw_new.get_data()
+    new_data = scaler.transform(new_data.T).T  
+    new_data = np.expand_dims(new_data.T, axis=-1)
+    prediction = np.argmax(model.predict(new_data), axis=1)
+    print(f"Predicted Sleep Stages: {prediction}")
+```
 
-W (Wake): Wakefulness
+This function takes a new EEG file as input, processes it, and predicts the sleep stage.
 
-1: Light Sleep
+## Conclusion
 
-2: Deep Sleep
+This project successfully predicts sleep stages using EEG data and deep learning techniques. The model leverages a Convolutional Neural Network (CNN) to identify patterns in the brainwave activity associated with different sleep stages. This work can be applied in healthcare settings to monitor and analyze sleep patterns, and potentially assist with diagnosing sleep disorders.
 
-3/4: Very Deep Sleep
+---
 
-R (REM): Rapid Eye Movement sleep, associated with dreaming.
+Feel free to contribute to this project or use it as a base for further research on EEG-based sleep stage classification.
+```
 
-This project can be useful for applications in healthcare, such as detecting sleep disorders or monitoring sleep patterns.
+This README provides a detailed, step-by-step explanation of the project,
