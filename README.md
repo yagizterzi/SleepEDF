@@ -152,7 +152,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 *Happy coding! If you have any questions or suggestions, please open an issue or submit a pull request.*
 ```
 
----
-
-Feel free to customize the sections and details according to your project's needs and the actual structure of your repository.
 
