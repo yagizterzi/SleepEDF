@@ -53,7 +53,7 @@ We use these features to train a deep learning model based on a CNN + LSTM archi
 1. **Clone the repository:**
    ```bash
    git clone [https://github.com/yagizterzi/SleepEDF]
-   cd sleep-quality-scoring
+   cd SleepEDF
    ```
 
 2. **Create a virtual environment (optional but recommended):**
