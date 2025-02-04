@@ -1,124 +1,158 @@
 
-# EEG Sleep Stage Prediction using Deep Learning
+# EEG & Hypnogram Sleep Quality Scoring with CNN + LSTM
 
-This project aims to predict a person's sleep stages using EEG (Electroencephalography) data, leveraging machine learning and deep learning techniques. The sleep stages represent different brainwave activities during sleep, and this project processes EEG signals to classify these stages.
+This repository contains code for a deep learning project that predicts sleep quality scores from EEG signals and hypnogram data. The model uses a combined CNN + LSTM architecture to extract spatial and temporal features from sleep recordings and computes key sleep metrics. The predicted sleep quality score is inspired by the Epworth Sleepiness Scale.
 
 ## Table of Contents
-- [Project Overview](#project-overview)
-- [Getting Started](#getting-started)
-- [Data Description](#data-description)
+
+- [Overview](#overview)
+- [Dataset](#dataset)
+- [Project Structure](#project-structure)
+- [Installation](#installation)
+- [Usage](#usage)
 - [Model Architecture](#model-architecture)
-- [Training the Model](#training-the-model)
-- [Evaluating the Model](#evaluating-the-model)
-- [Incorrect Predictions Analysis](#incorrect-predictions-analysis)
-- [Testing with New Data](#testing-with-new-data)
-- [Conclusion](#conclusion)
+- [Evaluation & Analysis](#evaluation--analysis)
+- [Future Work](#future-work)
+- [License](#license)
 
-## Project Overview
+## Overview
 
-The goal of this project is to classify sleep stages from EEG data using a Convolutional Neural Network (CNN). The model is trained on labeled EEG data and learns to predict the sleep stages based on the brainwave patterns it detects. The project includes data preprocessing, model training, evaluation, and analysis of predictions.
+In this project, we process EEG data from the Sleep-EDF Expanded 2018 dataset and extract features from the corresponding hypnograms. The features include:
+- **Total Sleep Time (TST)**
+- **N3 Sleep Percentage** (Deep sleep percentage)
+- **REM Sleep Percentage**
+- **Number and duration of awakenings**
+- **Sleep Onset Latency (SOL)**
+- **Sleep Efficiency**
 
-## Getting Started
+We use these features to train a deep learning model based on a CNN + LSTM architecture. The CNN layers extract spatial features from the signal, and the LSTM layers capture the temporal dependencies. The model is then evaluated using Mean Squared Error (MSE) and Mean Absolute Error (MAE).
 
-To run this project, you will need Python 3.x and the following libraries:
+## Dataset
 
-- `numpy`
-- `mne`
-- `tensorflow`
-- `scikit-learn`
-- `matplotlib`
-  
-You can install the required libraries using `pip`:
+- **Dataset:** Sleep-EDF Expanded 2018  
+- **Files:** The repository expects EEG recordings in EDF format (e.g., `SC4001E0-PSG.edf`) and corresponding hypnogram files (e.g., `*-Hypnogram.edf`).
 
-```bash
-pip install numpy mne tensorflow scikit-learn matplotlib
+> **Note:** Ensure you have the dataset in the correct folder structure. The current code uses local paths such as:
+> ```
+> C:\Users\yagiz\OneDrive\Masaüstü\Uygulamalar\kodlar\SleepEdf\dataset\sleep-edf-database-expanded-1.0.0\sleep-cassette\
+> ```
+
+## Project Structure
+
+```
+.
+├── README.md
+├── requirements.txt
+├── code
+│   └── dltool.py           # Main code for data processing and model training
+└── dataset                 # Folder containing the Sleep-EDF Expanded 2018 EDF files
 ```
 
-Once you have the dependencies installed, you can start by loading the EEG and hypnogram data files into the project.
+## Installation
 
-## Data Description
+1. **Clone the repository:**
+   ```bash
+   git clone https://github.com/yourusername/sleep-quality-scoring.git
+   cd sleep-quality-scoring
+   ```
 
-This project uses EEG data in `.edf` (European Data Format) files, which are commonly used for storing brainwave measurements. The data contains signals from specific EEG channels and labels indicating the sleep stage.
+2. **Create a virtual environment (optional but recommended):**
+   ```bash
+   python -m venv venv
+   source venv/bin/activate   # On Windows: venv\Scripts\activate
+   ```
 
-- **EEG data**: It contains the brain activity for specific channels recorded during sleep.
-- **Hypnogram data**: This provides annotations for the sleep stages at different time intervals.
+3. **Install the required packages:**
+   ```bash
+   pip install -r requirements.txt
+   ```
+   
+   **Example `requirements.txt`:**
+   ```
+   mne
+   numpy
+   pandas
+   scipy
+   matplotlib
+   seaborn
+   tensorflow
+   scikit-learn
+   shap
+   optuna
+   ```
 
-Sleep stages are labeled as follows:
-- **W (Wake)**: Wakefulness
-- **1**: Light Sleep
-- **2**: Deep Sleep
-- **3/4**: Very Deep Sleep
-- **R (REM)**: Rapid Eye Movement sleep (associated with dreaming)
+## Usage
+
+1. **Data Preparation & Feature Extraction:**
+
+   The script reads the EEG and hypnogram EDF files from the dataset folder. It performs the following:
+   - Loads EEG signals and selects the relevant channels (`EEG Fpz-Cz` and `EEG Pz-Oz`).
+   - Loads and maps the hypnogram annotations to sleep stages (W, N1, N2, N3, REM).
+   - Applies a band-pass filter (0.3-35 Hz) and a notch filter (49 Hz) to clean the EEG data.
+   - Segments the data into 30-second epochs.
+   - Extracts sleep metrics such as Total Sleep Time (TST), N3 percentage, REM percentage, awakenings, SOL, and sleep efficiency.
+
+2. **Model Training:**
+
+   The CNN + LSTM model is defined and compiled using TensorFlow. The training pipeline:
+   - Formats the extracted features as input (reshaped to `[n_samples, n_features, 1]`).
+   - Uses a randomly generated target sleep quality score (replace this with your actual labels as needed).
+   - Splits the data into training and testing sets.
+   - Trains the model for 100 epochs with early stopping using a validation split.
+   - Visualizes the loss and MAE during training.
+   - Evaluates the model on the test set and plots the predicted versus true sleep scores.
+
+   To run the model training, simply execute:
+   ```bash
+   python code/dltool.py
+   ```
+
+3. **Model Evaluation & Feature Importance Analysis:**
+
+   The repository includes code to:
+   - Compare model predictions with actual sleep scores using Pearson correlation.
+   - Evaluate sleep stage predictions using metrics like accuracy, precision, recall, and F1-score.
+   - Use SHAP to analyze feature importance and understand which sleep metrics most affect the predicted sleep quality.
 
 ## Model Architecture
 
-The model is built using a **Convolutional Neural Network (CNN)**, which is effective for time-series data like EEG signals. The architecture includes the following layers:
+The model architecture is as follows:
 
-1. **Conv1D**: Detects patterns in the EEG signals corresponding to different sleep stages.
-2. **MaxPooling1D**: Reduces dimensionality to speed up training.
-3. **Flatten**: Converts the 2D output of the convolution layers into a 1D vector.
-4. **Dense**: Fully connected layer that learns high-level features.
-5. **Dropout**: Prevents overfitting by randomly setting a fraction of input units to 0 at each update.
-6. **Softmax**: Outputs a probability distribution for the sleep stages.
+- **Conv1D Layer:** Extracts spatial features from the input.
+- **MaxPooling1D & Dropout Layers:** Reduce dimensionality and prevent overfitting.
+- **LSTM Layer:** Captures temporal dependencies in the sequence data.
+- **Dense Layers:** Further processes the features and outputs the final sleep quality score.
 
-The model is compiled with the Adam optimizer and sparse categorical cross-entropy loss.
+The model is compiled with the Adam optimizer and uses mean squared error (MSE) as the loss function.
 
-## Training the Model
+## Evaluation & Analysis
 
-After preprocessing the EEG data, the model is trained using the training set. The training process involves adjusting the model's weights to minimize the error in predicting sleep stages.
+- **Sleep Score Comparison:**  
+  The model's predicted sleep scores are compared with true sleep scores (e.g., based on the Epworth Sleepiness Scale) using Pearson correlation.
 
-```python
-history = model.fit(X_train, y_train, epochs=10, validation_data=(X_test, y_test))
-```
+- **Sleep Stage Analysis:**  
+  The code compares the predicted sleep stages with the actual hypnogram stages using accuracy, precision, recall, and F1-score metrics.
 
-## Evaluating the Model
+- **Feature Importance with SHAP:**  
+  SHAP values are computed to determine the contribution of each feature (TST, N3 percentage, REM percentage, etc.) to the final sleep score prediction.
 
-Once trained, the model is evaluated on a separate test set to determine its accuracy and loss:
+## Future Work
 
-```python
-test_loss, test_acc = model.evaluate(X_test, y_test)
-print(f"Test Accuracy: {test_acc:.2f}")
-```
+- **Data Augmentation:** Incorporate more patient data or multiple nights per patient to enhance model robustness.
+- **Advanced Hyperparameter Optimization:** Use Bayesian optimization frameworks like Optuna for fine-tuning model parameters.
+- **Deployment:** Wrap the model in a Flask API for real-time sleep quality predictions.
+- **Additional Modalities:** Integrate other biosignals (e.g., EOG, EMG) to improve the model’s performance.
 
-This provides an indication of how well the model generalizes to new, unseen data.
+## License
 
-## Incorrect Predictions Analysis
-
-The model's performance is further analyzed by examining its incorrect predictions. This helps in understanding where the model made mistakes and identifying any potential improvements.
-
-```python
-incorrect_predictions = []
-for i in range(len(X_test)):
-    sample_input = np.expand_dims(X_test[i], axis=0)
-    predicted_label = np.argmax(model.predict(sample_input))
-    if predicted_label != y_test[i]:
-        incorrect_predictions.append((i, y_test[i], predicted_label))
-```
-
-## Testing with New Data
-
-To test the model with new EEG data that it hasn't seen before, you can use the following function:
-
-```python
-def test_new_eeg(new_eeg_path):
-    raw_new = mne.io.read_raw_edf(new_eeg_path, preload=True)
-    raw_new.pick_channels(['EEG Fpz-Cz', 'EEG Pz-Oz'])
-    new_data = raw_new.get_data()
-    new_data = scaler.transform(new_data.T).T  
-    new_data = np.expand_dims(new_data.T, axis=-1)
-    prediction = np.argmax(model.predict(new_data), axis=1)
-    print(f"Predicted Sleep Stages: {prediction}")
-```
-
-This function takes a new EEG file as input, processes it, and predicts the sleep stage.
-
-## Conclusion
-
-This project successfully predicts sleep stages using EEG data and deep learning techniques. The model leverages a Convolutional Neural Network (CNN) to identify patterns in the brainwave activity associated with different sleep stages. This work can be applied in healthcare settings to monitor and analyze sleep patterns, and potentially assist with diagnosing sleep disorders.
+This project is licensed under the MIT License. See the [LICENSE](LICENSE) file for details.
 
 ---
 
-Feel free to contribute to this project or use it as a base for further research on EEG-based sleep stage classification.
+*Happy coding! If you have any questions or suggestions, please open an issue or submit a pull request.*
 ```
 
-This README provides a detailed, step-by-step explanation of the project,
+---
+
+Feel free to customize the sections and details according to your project's needs and the actual structure of your repository.
+
