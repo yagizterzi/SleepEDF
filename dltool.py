@@ -1,130 +1,177 @@
-import numpy as np
 import mne
-from tensorflow.keras.models import Sequential
-from tensorflow.keras.layers import Conv1D, MaxPooling1D, Flatten, Dense, Dropout, BatchNormalization
-from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import StandardScaler
+import numpy as np
+import pandas as pd
+import scipy.signal as signal
 import matplotlib.pyplot as plt
+import seaborn as sns
+import os
 import random
+import tensorflow as tf
+from tensorflow.keras.models import Sequential
+from tensorflow.keras.layers import Conv1D, MaxPooling1D, LSTM, Dense, Dropout
+from tensorflow.keras.optimizers import Adam
+from sklearn.model_selection import train_test_split
+import shap
+
+# EEG dosyasının yolu
+edf_file = "sleep-edf-database-expanded-1.0.0\sleep-cassette\SC4001E0-PSG.edf"  # Sleep-EDF Expanded 2018'den bir örnek dosya
+
+# EEG verisini yükle
+raw = mne.io.read_raw_edf(edf_file, preload=True)
+
+print(raw.info['ch_names'])
+eeg_channels = ['EEG Fpz-Cz', 'EEG Pz-Oz']  # Ön-orta bölge EEG kaydı
+raw.pick_channels(eeg_channels)
+
+hypnogram_dir = "sleep-edf-database-expanded-1.0.0\sleep-cassette"
+
+# Tüm hypnogram dosyalarını yükle ve ekle
+all_hypnogram_dfs = []
+for file in os.listdir(hypnogram_dir):
+    if file.endswith("-Hypnogram.edf"):
+        hypnogram_file = os.path.join(hypnogram_dir, file)
+        annotations = mne.read_annotations(hypnogram_file)
+        raw.set_annotations(annotations)
+
+        hypno_events = []
+        for onset, duration, description in zip(annotations.onset, annotations.duration, annotations.description):
+            hypno_events.append([onset, duration, description])
+
+        # Hypnogram'ı DataFrame olarak kaydet
+        hypnogram_df = pd.DataFrame(hypno_events, columns=["Onset", "Duration", "Stage"])
+        hypnogram_df["Stage"] = hypnogram_df["Stage"].astype(str)  # Stage'leri string formatına çevir
+
+        # Uyku evrelerini daha anlaşılır hale getirmek için Stage sütunundaki değerleri düzenleyelim
+        stage_mapping = {
+            "Sleep stage W": "W",
+            "Sleep stage 1": "N1",
+            "Sleep stage 2": "N2",
+            "Sleep stage 3": "N3",
+            "Sleep stage 4": "N3",
+            "Sleep stage R": "REM"
+        }
+        hypnogram_df["Stage"] = hypnogram_df["Stage"].map(stage_mapping)
+        all_hypnogram_dfs.append(hypnogram_df)
+
+# Rastgele bir hypnogram seç
+random_hypnogram_df = random.choice(all_hypnogram_dfs)
+print(random_hypnogram_df.head())
+
+# Bant geçiren filtre (0.3 - 35 Hz)
+raw.filter(l_freq=0.3, h_freq=35)
+
+# Örnekleme frekansını kontrol et
+sfreq = raw.info['sfreq']
+print(f"Örnekleme frekansı: {sfreq} Hz")
+
+# Nyquist frekansını kontrol et
+nyquist_freq = sfreq / 2
+print(f"Nyquist frekansı: {nyquist_freq} Hz")
+
+# Notch filtresi uygula (49 Hz frekansını kullan)
+if nyquist_freq > 49:
+    raw.notch_filter(freqs=[49])
+
+# Epoch'ları oluştur
+epochs = mne.make_fixed_length_epochs(raw, duration=30.0, overlap=0.0)
+
+features_list = []
+for idx, hypnogram_df in enumerate(all_hypnogram_dfs):
+    TST = hypnogram_df[hypnogram_df["Stage"] != "W"]["Duration"].sum() / 60  # Convert to minutes
+    print(f"Hypnogram {idx} - Toplam Uyku Süresi (TST): {TST:.2f} dakika")
+    
+    N3_total = hypnogram_df[hypnogram_df["Stage"] == "N3"]["Duration"].sum()
+    N3_percentage = (N3_total / (TST * 60)) * 100 if TST > 0 else 0
+    print(f"Hypnogram {idx} - N3 Derin Uyku Yüzdesi: {N3_percentage:.2f}%")
+    
+    REM_total = hypnogram_df[hypnogram_df["Stage"] == "REM"]["Duration"].sum()
+    REM_percentage = (REM_total / (TST * 60)) * 100 if TST > 0 else 0
+    print(f"Hypnogram {idx} - REM Yüzdesi: {REM_percentage:.2f}%")
+    
+    wake_epochs = len(hypnogram_df[hypnogram_df["Stage"] == "W"])
+    print(f"Hypnogram {idx} - Gece Uyanma Sayısı: {wake_epochs}")
+    
+    non_wake = hypnogram_df[hypnogram_df["Stage"] != "W"]
+    SOL = non_wake["Onset"].min() / 60 if not non_wake.empty else 0  # Convert to minutes
+    print(f"Hypnogram {idx} - Uyku Başlangıç Gecikmesi (SOL): {SOL:.2f} dakika")
+    
+    time_in_bed = hypnogram_df["Duration"].sum() / 60  # Total time in bed in minutes
+    sleep_efficiency = (TST / time_in_bed) * 100 if time_in_bed > 0 else 0
+    print(f"Hypnogram {idx} - Uyku Verimliliği: {sleep_efficiency:.2f}%")
+    
+    features_list.append({
+        "Hypnogram_ID": idx,
+        "TST": TST,
+        "N3_percentage": N3_percentage,
+        "REM_percentage": REM_percentage,
+        "Awakenings": wake_epochs,
+        "SOL": SOL,
+        "Sleep_Efficiency": sleep_efficiency,
+    })
+
+df_features = pd.DataFrame(features_list)
+print(df_features)
 
 
-# 1. EEG Verisini Yükle
-eeg_path = "SleepEdf\SC4001E0-PSG.edf"
-raw_eeg = mne.io.read_raw_edf(eeg_path, preload=True)
-raw_eeg.pick(['EEG Fpz-Cz', 'EEG Pz-Oz'])  # İlgili kanalları seç
-data = raw_eeg.get_data()
-sfreq = raw_eeg.info['sfreq']
+# Modeli kurma
+model = Sequential()
 
-# 2. Hypnogramı Yükle ve İşle
-hypnogram_path = "SleepEdf\SC4002EC-Hypnogram.edf"
-raw_hyp = mne.io.read_raw_edf(hypnogram_path, preload=False)
-events, event_id = mne.events_from_annotations(raw_hyp)
-print(events)
-print(event_id)
+# CNN katmanı - uzamsal özellik çıkarımı
+model.add(Conv1D(filters=32, kernel_size=3, activation='relu', input_shape=(df_features.shape[1], 1)))
+model.add(MaxPooling1D(pool_size=2))
+model.add(Dropout(0.2))
 
+# LSTM katmanı - zaman bağımlılıklarını yakalama
+model.add(LSTM(64, return_sequences=False))  # return_sequences=False, sadece son çıktıyı alacak
 
+# Tam bağlantılı katman (Dense) ve çıkış katmanı
+model.add(Dense(32, activation='relu'))
+model.add(Dense(1))  # Tek bir çıkış (uyku skoru)
 
-# Açıklamaları etiketlere dönüştür
-sleep_stage_mapping = {
-    'Sleep stage W': 0,
-    'Sleep stage 1': 1,
-    'Sleep stage 2': 2,
-    'Sleep stage 3': 3,
-    'Sleep stage 4': 3,
-    'Sleep stage R': 4,
-}
-labels = []
-for ann in annotations:
-    stage = ann['description']
-    if stage in sleep_stage_mapping:
-        n_epochs = int(ann['duration'] / 30)  # 30 saniyelik epoch sayısı
-        labels.extend([sleep_stage_mapping[stage]] * n_epochs)
+# Modelin derlenmesi
+model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error', metrics=['mae'])
 
-# 3. EEG ve Etiket Verilerini Eşitle
-epoch_duration = 30  # saniye
-n_samples_per_epoch = int(sfreq * epoch_duration)
-n_epochs = int(data.shape[1] / n_samples_per_epoch)
+# Modeli özetleme
+model.summary()
 
-# EEG verisini yeniden şekillendir (epoch, zaman, kanal)
-X = data.T.reshape(n_epochs, n_samples_per_epoch, -1)
+# Özelliklerin uygun şekilde formatlanması
+X = np.expand_dims(df_features.values, axis=-1)  # Veriyi [n_samples, n_features, 1] şeklinde yapılandır
 
-# Etiketleri EEG ile aynı boyuta getir
-labels = np.array(labels[:n_epochs])  # EEG'ye göre kes
-# 4. Veriyi Ölçeklendir
-scaler = StandardScaler()
-X = np.array([scaler.fit_transform(epoch) for epoch in X])
-print(f"X shape: {X.shape}, Labels length: {len(labels)}")
-# 5. Veriyi Eğitim ve Test Kümelerine Ayır
-X_train, X_test, y_train, y_test = train_test_split(X, labels, test_size=0.2, shuffle=True, random_state=42)
+# Modelin hedef etiketini belirleyin. Bu örnekte, rastgele oluşturuldu, gerçek uyku skorları ile değiştirin.
+y = np.random.randn(df_features.shape[0])  # Gerçek uyku skoru burada kullanılacak
 
+# Eğitim ve test veri setleri olarak bölün
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# 6. Model Mimarisini Oluştur
-model = Sequential([
-    Conv1D(64, 3, activation='relu', input_shape=(X_train.shape[1], X_train.shape[2])),
-    BatchNormalization(),
-    MaxPooling1D(2),
-    Conv1D(128, 3, activation='relu'),
-    BatchNormalization(),
-    MaxPooling1D(2),
-    Flatten(),
-    Dense(128, activation='relu'),
-    Dropout(0.5),
-    Dense(5, activation='softmax')
-])
+# Modeli eğitme
+history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_split=0.2)
 
-# 7. Modeli Derle ve Eğit
-model.compile(optimizer='adam', loss='sparse_categorical_crossentropy', metrics=['accuracy'])
-history = model.fit(X_train, y_train, epochs=10, validation_data=(X_test, y_test))
-
-# 8. Modeli Değerlendir
-test_loss, test_acc = model.evaluate(X_test, y_test)
-print(f"Test Accuracy: {test_acc:.2f}")
-
-
-# 7. Modeli değerlendirme
-plt.figure(figsize=(12, 4))
-plt.subplot(1, 2, 1)
-plt.plot(history.history['accuracy'], label='Train Accuracy')
-plt.plot(history.history['val_accuracy'], label='Validation Accuracy')
+# Eğitim sürecinin görselleştirilmesi
+plt.plot(history.history['loss'], label='Eğitim kaybı')
+plt.plot(history.history['val_loss'], label='Doğrulama kaybı')
 plt.legend()
-plt.title("Model Accuracy")
-
-plt.subplot(1, 2, 2)
-plt.plot(history.history['loss'], label='Train Loss')
-plt.plot(history.history['val_loss'], label='Validation Loss')
-plt.legend()
-plt.title("Model Loss")
+plt.title('Model Kaybı (Loss)')
+plt.xlabel('Epoch')
+plt.ylabel('Loss')
 plt.show()
 
-test_loss, test_acc = model.evaluate(X_test, y_test)
-print(f"Test Accuracy: {test_acc:.2f}")
+plt.plot(history.history['mae'], label='Eğitim MAE')
+plt.plot(history.history['val_mae'], label='Doğrulama MAE')
+plt.legend()
+plt.title('Model MAE')
+plt.xlabel('Epoch')
+plt.ylabel('MAE')
+plt.show()
 
-# 8. Modeli test etme (rastgele bir örnek seçerek)
-random_idx = random.randint(0, len(X_test) - 1)
-sample_input = np.expand_dims(X_test[random_idx], axis=0)
-predicted_label = np.argmax(model.predict(sample_input))
-true_label = y_test[random_idx]
-print(f"Gerçek: {true_label}, Tahmin: {predicted_label}")
+# Test seti üzerinden tahmin yapma
+y_pred = model.predict(X_test)
 
-# 9. Yanlış tahminleri analiz etme
-incorrect_predictions = []
-for i in range(len(X_test)):
-    sample_input = np.expand_dims(X_test[i], axis=0)
-    predicted_label = np.argmax(model.predict(sample_input))
-    if predicted_label != y_test[i]:
-        incorrect_predictions.append((i, y_test[i], predicted_label))
+plt.figure(figsize=(8, 6))
+plt.plot(y_test, label='Gerçek Skorlar', marker='o')
+plt.plot(y_pred, label='Tahmin Edilen Skorlar', marker='x')
+plt.xlabel("Örnek")
+plt.ylabel("Uyku Skoru")
+plt.title("Gerçek ve Tahmin Edilen Uyku Skorları")
+plt.legend()
+plt.show()
 
-print(f"Yanlış tahmin edilen örnek sayısı: {len(incorrect_predictions)}")
-print("İlk 5 yanlış tahmin:")
-for i, true_label, predicted_label in incorrect_predictions[:5]:
-    print(f"Örnek {i} -> Gerçek: {true_label}, Tahmin: {predicted_label}")
-
-# 10. Yeni bir EEG sinyali ile test etme
-def test_new_eeg(new_eeg_path):
-    raw_new = mne.io.read_raw_edf(new_eeg_path, preload=True)
-    raw_new.pick_channels(['EEG Fpz-Cz', 'EEG Pz-Oz'])
-    new_data = raw_new.get_data()
-    new_data = scaler.transform(new_data.T).T  
-    new_data = np.expand_dims(new_data.T, axis=-1)
-    prediction = np.argmax(model.predict(new_data), axis=1)
-    print(f"Tahmin Edilen Uyku Evreleri: {prediction}")
