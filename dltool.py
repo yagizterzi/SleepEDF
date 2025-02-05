@@ -13,19 +13,19 @@ from tensorflow.keras.optimizers import Adam
 from sklearn.model_selection import train_test_split
 import shap
 
-# EEG dosyasının yolu
-edf_file = "sleep-edf-database-expanded-1.0.0\sleep-cassette\SC4001E0-PSG.edf"  # Sleep-EDF Expanded 2018'den bir örnek dosya
+# Path to the EEG file (example from Sleep-EDF Expanded 2018)
+edf_file = r"C:\Users\yagiz\OneDrive\Masaüstü\Uygulamalar\kodlar\SleepEdf\dataset\sleep-edf-database-expanded-1.0.0\sleep-cassette\SC4001E0-PSG.edf"
 
-# EEG verisini yükle
+# Load EEG data
 raw = mne.io.read_raw_edf(edf_file, preload=True)
 
 print(raw.info['ch_names'])
-eeg_channels = ['EEG Fpz-Cz', 'EEG Pz-Oz']  # Ön-orta bölge EEG kaydı
+eeg_channels = ['EEG Fpz-Cz', 'EEG Pz-Oz']  # Frontal-central EEG recordings
 raw.pick_channels(eeg_channels)
 
-hypnogram_dir = "sleep-edf-database-expanded-1.0.0\sleep-cassette"
+hypnogram_dir = r"C:\Users\yagiz\OneDrive\Masaüstü\Uygulamalar\kodlar\SleepEdf\dataset\sleep-edf-database-expanded-1.0.0\sleep-cassette"
 
-# Tüm hypnogram dosyalarını yükle ve ekle
+# Load and append all hypnogram files
 all_hypnogram_dfs = []
 for file in os.listdir(hypnogram_dir):
     if file.endswith("-Hypnogram.edf"):
@@ -37,11 +37,11 @@ for file in os.listdir(hypnogram_dir):
         for onset, duration, description in zip(annotations.onset, annotations.duration, annotations.description):
             hypno_events.append([onset, duration, description])
 
-        # Hypnogram'ı DataFrame olarak kaydet
+        # Save hypnogram as DataFrame
         hypnogram_df = pd.DataFrame(hypno_events, columns=["Onset", "Duration", "Stage"])
-        hypnogram_df["Stage"] = hypnogram_df["Stage"].astype(str)  # Stage'leri string formatına çevir
+        hypnogram_df["Stage"] = hypnogram_df["Stage"].astype(str)  # Convert stages to string
 
-        # Uyku evrelerini daha anlaşılır hale getirmek için Stage sütunundaki değerleri düzenleyelim
+        # Remap stage values for clarity
         stage_mapping = {
             "Sleep stage W": "W",
             "Sleep stage 1": "N1",
@@ -53,51 +53,51 @@ for file in os.listdir(hypnogram_dir):
         hypnogram_df["Stage"] = hypnogram_df["Stage"].map(stage_mapping)
         all_hypnogram_dfs.append(hypnogram_df)
 
-# Rastgele bir hypnogram seç
+# Select a random hypnogram
 random_hypnogram_df = random.choice(all_hypnogram_dfs)
 print(random_hypnogram_df.head())
 
-# Bant geçiren filtre (0.3 - 35 Hz)
+# Apply bandpass filter (0.3 - 35 Hz)
 raw.filter(l_freq=0.3, h_freq=35)
 
-# Örnekleme frekansını kontrol et
+# Check the sampling frequency
 sfreq = raw.info['sfreq']
-print(f"Örnekleme frekansı: {sfreq} Hz")
+print(f"Sampling frequency: {sfreq} Hz")
 
-# Nyquist frekansını kontrol et
+# Check the Nyquist frequency
 nyquist_freq = sfreq / 2
-print(f"Nyquist frekansı: {nyquist_freq} Hz")
+print(f"Nyquist frequency: {nyquist_freq} Hz")
 
-# Notch filtresi uygula (49 Hz frekansını kullan)
+# Apply notch filter (using 49 Hz) if applicable
 if nyquist_freq > 49:
     raw.notch_filter(freqs=[49])
 
-# Epoch'ları oluştur
+# Create epochs
 epochs = mne.make_fixed_length_epochs(raw, duration=30.0, overlap=0.0)
 
 features_list = []
 for idx, hypnogram_df in enumerate(all_hypnogram_dfs):
-    TST = hypnogram_df[hypnogram_df["Stage"] != "W"]["Duration"].sum() / 60  # Convert to minutes
-    print(f"Hypnogram {idx} - Toplam Uyku Süresi (TST): {TST:.2f} dakika")
+    TST = hypnogram_df[hypnogram_df["Stage"] != "W"]["Duration"].sum() / 60  # Total Sleep Time in minutes
+    print(f"Hypnogram {idx} - Total Sleep Time (TST): {TST:.2f} minutes")
     
     N3_total = hypnogram_df[hypnogram_df["Stage"] == "N3"]["Duration"].sum()
     N3_percentage = (N3_total / (TST * 60)) * 100 if TST > 0 else 0
-    print(f"Hypnogram {idx} - N3 Derin Uyku Yüzdesi: {N3_percentage:.2f}%")
+    print(f"Hypnogram {idx} - N3 Deep Sleep Percentage: {N3_percentage:.2f}%")
     
     REM_total = hypnogram_df[hypnogram_df["Stage"] == "REM"]["Duration"].sum()
     REM_percentage = (REM_total / (TST * 60)) * 100 if TST > 0 else 0
-    print(f"Hypnogram {idx} - REM Yüzdesi: {REM_percentage:.2f}%")
+    print(f"Hypnogram {idx} - REM Percentage: {REM_percentage:.2f}%")
     
     wake_epochs = len(hypnogram_df[hypnogram_df["Stage"] == "W"])
-    print(f"Hypnogram {idx} - Gece Uyanma Sayısı: {wake_epochs}")
+    print(f"Hypnogram {idx} - Number of Awakenings: {wake_epochs}")
     
     non_wake = hypnogram_df[hypnogram_df["Stage"] != "W"]
-    SOL = non_wake["Onset"].min() / 60 if not non_wake.empty else 0  # Convert to minutes
-    print(f"Hypnogram {idx} - Uyku Başlangıç Gecikmesi (SOL): {SOL:.2f} dakika")
+    SOL = non_wake["Onset"].min() / 60 if not non_wake.empty else 0  # Sleep Onset Latency (minutes)
+    print(f"Hypnogram {idx} - Sleep Onset Latency (SOL): {SOL:.2f} minutes")
     
     time_in_bed = hypnogram_df["Duration"].sum() / 60  # Total time in bed in minutes
     sleep_efficiency = (TST / time_in_bed) * 100 if time_in_bed > 0 else 0
-    print(f"Hypnogram {idx} - Uyku Verimliliği: {sleep_efficiency:.2f}%")
+    print(f"Hypnogram {idx} - Sleep Efficiency: {sleep_efficiency:.2f}%")
     
     features_list.append({
         "Hypnogram_ID": idx,
@@ -112,66 +112,65 @@ for idx, hypnogram_df in enumerate(all_hypnogram_dfs):
 df_features = pd.DataFrame(features_list)
 print(df_features)
 
-
-# Modeli kurma
+# Build the model
 model = Sequential()
 
-# CNN katmanı - uzamsal özellik çıkarımı
+# CNN layer - spatial feature extraction
 model.add(Conv1D(filters=32, kernel_size=3, activation='relu', input_shape=(df_features.shape[1], 1)))
 model.add(MaxPooling1D(pool_size=2))
 model.add(Dropout(0.2))
 
-# LSTM katmanı - zaman bağımlılıklarını yakalama
-model.add(LSTM(64, return_sequences=False))  # return_sequences=False, sadece son çıktıyı alacak
+# LSTM layer - capture temporal dependencies
+model.add(LSTM(64, return_sequences=False))  # Only final output is used
 
-# Tam bağlantılı katman (Dense) ve çıkış katmanı
+# Fully connected (Dense) layer and output layer
 model.add(Dense(32, activation='relu'))
-model.add(Dense(1))  # Tek bir çıkış (uyku skoru)
+model.add(Dense(1))  # Single output (sleep score)
 
-# Modelin derlenmesi
+# Compile the model
 model.compile(optimizer=Adam(learning_rate=0.001), loss='mean_squared_error', metrics=['mae'])
 
-# Modeli özetleme
+# Display the model summary
 model.summary()
 
-# Özelliklerin uygun şekilde formatlanması
-X = np.expand_dims(df_features.values, axis=-1)  # Veriyi [n_samples, n_features, 1] şeklinde yapılandır
+# Format features accordingly
+X = np.expand_dims(df_features.values, axis=-1)  # Reshape data to [n_samples, n_features, 1]
 
-# Modelin hedef etiketini belirleyin. Bu örnekte, rastgele oluşturuldu, gerçek uyku skorları ile değiştirin.
-y = np.random.randn(df_features.shape[0])  # Gerçek uyku skoru burada kullanılacak
+# Define model target labels. Here, randomly generated values are used; replace with actual sleep scores.
+y = np.random.randn(df_features.shape[0])
 
-# Eğitim ve test veri setleri olarak bölün
+# Split data into training and test sets
 X_train, X_test, y_train, y_test = train_test_split(X, y, test_size=0.2, random_state=42)
 
-# Modeli eğitme
+# Train the model
 history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_split=0.2)
 
-# Eğitim sürecinin görselleştirilmesi
-plt.plot(history.history['loss'], label='Eğitim kaybı')
-plt.plot(history.history['val_loss'], label='Doğrulama kaybı')
+# Visualize the training process
+plt.plot(history.history['loss'], label='Training Loss')
+plt.plot(history.history['val_loss'], label='Validation Loss')
 plt.legend()
-plt.title('Model Kaybı (Loss)')
+plt.title('Model Loss')
 plt.xlabel('Epoch')
 plt.ylabel('Loss')
 plt.show()
 
-plt.plot(history.history['mae'], label='Eğitim MAE')
-plt.plot(history.history['val_mae'], label='Doğrulama MAE')
+plt.plot(history.history['mae'], label='Training MAE')
+plt.plot(history.history['val_mae'], label='Validation MAE')
 plt.legend()
 plt.title('Model MAE')
 plt.xlabel('Epoch')
 plt.ylabel('MAE')
 plt.show()
 
-# Test seti üzerinden tahmin yapma
+# Predict on the test set
 y_pred = model.predict(X_test)
 
 plt.figure(figsize=(8, 6))
-plt.plot(y_test, label='Gerçek Skorlar', marker='o')
-plt.plot(y_pred, label='Tahmin Edilen Skorlar', marker='x')
-plt.xlabel("Örnek")
-plt.ylabel("Uyku Skoru")
-plt.title("Gerçek ve Tahmin Edilen Uyku Skorları")
+plt.plot(y_test, label='Actual Scores', marker='o')
+plt.plot(y_pred, label='Predicted Scores', marker='x')
+plt.xlabel("Sample")
+plt.ylabel("Sleep Score")
+plt.title("Actual vs Predicted Sleep Scores")
 plt.legend()
 plt.show()
 
