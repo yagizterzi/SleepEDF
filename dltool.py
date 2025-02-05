@@ -174,3 +174,9 @@ plt.title("Actual vs Predicted Sleep Scores")
 plt.legend()
 plt.show()
 
+X_test_shap = X_test.squeeze(axis=-1)  # Make it 2D by removing the last dim
+explainer = shap.Explainer(model, X_train.squeeze(axis=-1))  # Use 2D while training the model
+shap_values = explainer(X_test_shap)
+
+shap.summary_plot(shap_values, X_test_shap, feature_names=df_features.columns)
+
